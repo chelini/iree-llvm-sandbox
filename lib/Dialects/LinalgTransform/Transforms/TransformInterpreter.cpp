@@ -42,6 +42,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "Dialects/LinalgTransform/ScopedCtx.h"
 
 #define DEBUG_TYPE "transform-interpreter"
 #define DBGS() (llvm::dbgs() << "[" DEBUG_TYPE << "]: ")
@@ -256,6 +257,12 @@ struct InterpreterPass : public PassWrapper<InterpreterPass, Pass> {
     if (!module)
       return signalPassFailure();
 
+    ScopedContext ctx;
+    llvm::errs() << ctx.tm.get() << "\n";
+    ctx.tm->setEnabled(true);
+    TimingScope timing = ctx.tm->getRootScope();
+    TimingScope parserTiming = timing.nest("interpreter");
+
     auto result = module.walk([&](linalg::transform::SequenceOp sequenceOp) {
       if (failed(executeSequence(sequenceOp, module)))
         return WalkResult::interrupt();
@@ -264,7 +271,10 @@ struct InterpreterPass : public PassWrapper<InterpreterPass, Pass> {
 
     if (result.wasInterrupted())
       signalPassFailure();
-  }
+    parserTiming.stop();
+    llvm::errs() << "printing-------------------------------\n";
+    ctx.tm->print();
+  }  
 };
 
 struct DropScheduleFromModulePass

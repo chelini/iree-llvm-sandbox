@@ -1,6 +1,7 @@
 add_mlir_library(MLIRLinalgTransformOps
   LinalgTransformOps.cpp
   PDL.cpp
+  ScopedCtx.cpp
   ScopedTransform.cpp
   TransformOpInterface.cpp
   TrackingListener.cpp

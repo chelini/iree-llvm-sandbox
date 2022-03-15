@@ -48,6 +48,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Debug.h"
 #include <algorithm>
+#include "Dialects/LinalgTransform/ScopedCtx.h"
 
 #include "FunctionHelpers.h"
 #include "PDL.h"
@@ -66,6 +67,8 @@ void transform::LinalgTransformDialect::initialize() {
 #include "Dialects/LinalgTransform/LinalgTransformOps.cpp.inc"
       >();
 }
+
+//static DefaultTimingManager tm;
 
 //===----------------------------------------------------------------------===//
 // Functional Rewrite Helpers
@@ -567,8 +570,16 @@ transform::LowerVectorsOp::apply(transform::TransformResults &results,
 //===---------------------------------------------------------------------===//
 
 LogicalResult transform::BufferizeOp::apply(transform::TransformResults &result,
-                                            transform::TransformState &state) {
+                                            transform::TransformState &state) { 
   PassManager pm(getContext());
+
+  auto ctx = ScopedContext::getCurrentScopedContext();
+  assert(ctx != nullptr);
+
+  llvm::errs() << ctx->tm.get() << "\n";
+  //applyDefaultTimingManagerCLOptions(tm);
+  TimingScope timing = ctx->tm->getRootScope();
+  TimingScope parserTiming = timing.nest("bufferize");
 
   bufferization::AnalysisBufferizationOptions options;
   options.memCpyFn = [](OpBuilder &builder, Location loc, Value from,
@@ -582,6 +593,8 @@ LogicalResult transform::BufferizeOp::apply(transform::TransformResults &result,
   // Perform buffer-level hoistings.
   state.getTopLevel()->walk(
       [&](FuncOp funcOp) { hoistRedundantVectorTransfers(funcOp); });
+
+  parserTiming.stop();
   return success();
 }
 
@@ -596,6 +609,12 @@ transform::LowerToLLVMOp::apply(transform::TransformResults &result,
   // unrealized casts, but there needs to be the final module-wise cleanup in
   // the end. Keep module-level for now.
   PassManager pm(getContext());
+  //DefaultTimingManager tm;
+  //applyDefaultTimingManagerCLOptions(tm);
+  auto ctx = ScopedContext::getCurrentScopedContext();
+  llvm::errs() << ctx->tm.get() << "\n";
+  TimingScope timing = ctx->tm->getRootScope();
+  TimingScope parserTiming = timing.nest("Lower_to_llvm");
 
   pm.addNestedPass<FuncOp>(createConvertVectorToSCFPass());
   pm.addNestedPass<FuncOp>(createConvertLinalgToLoopsPass());
@@ -636,6 +655,7 @@ transform::LowerToLLVMOp::apply(transform::TransformResults &result,
       funcOp.setArgAttr(i, "llvm.noalias", UnitAttr::get(funcOp.getContext()));
     }
   });
+  parserTiming.stop();
   return success();
 }
 
